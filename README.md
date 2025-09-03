@@ -115,7 +115,6 @@ Case 3: Compliance Report
 
 - Reduces human error and audit overhead.
 
-- Portfolio-ready project for senior DevOps / Cloud Engineering roles.
 
 
 ## Next Steps (Future Enhancements)
