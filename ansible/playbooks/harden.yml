@@ -1,0 +1,6 @@
+---
+- name: CIS-style OS hardening
+  hosts: all
+  become: true
+  roles:
+    - cis_hardening

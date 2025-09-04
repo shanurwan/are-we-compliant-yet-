@@ -1,0 +1,23 @@
+---
+- name: Restart ssh
+  service:
+    name: ssh
+    state: restarted
+
+- name: Restart auditd
+  service:
+    name: auditd
+    state: restarted
+    enabled: yes
+
+- name: Restart chrony
+  service:
+    name: chrony
+    state: restarted
+    enabled: yes
+
+- name: Restart fail2ban
+  service:
+    name: fail2ban
+    state: restarted
+    enabled: yes

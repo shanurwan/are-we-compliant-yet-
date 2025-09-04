@@ -1,0 +1,41 @@
+---
+- name: Install node-level monitoring agent
+  hosts: all
+  become: true
+  tasks:
+    - name: Install Prometheus Node Exporter (Ubuntu/Debian)
+      apt:
+        name: prometheus-node-exporter
+        state: present
+      when: monitoring_agent == "node_exporter"
+
+    - name: Ensure node exporter is enabled and running
+      service:
+        name: prometheus-node-exporter
+        state: started
+        enabled: yes
+      when: monitoring_agent == "node_exporter"
+
+    - name: CloudWatch agent .deb provided?
+      debug:
+        msg: "Set cloudwatch_agent_deb_url in group_vars/all.yml to install CloudWatch agent."
+      when: monitoring_agent == "cloudwatch" and (cloudwatch_agent_deb_url | length == 0)
+
+    - name: Download CloudWatch agent
+      get_url:
+        url: "{{ cloudwatch_agent_deb_url }}"
+        dest: /tmp/amazon-cloudwatch-agent.deb
+        mode: '0644'
+      when: monitoring_agent == "cloudwatch" and (cloudwatch_agent_deb_url | length > 0)
+
+    - name: Install CloudWatch agent
+      apt:
+        deb: /tmp/amazon-cloudwatch-agent.deb
+      when: monitoring_agent == "cloudwatch" and (cloudwatch_agent_deb_url | length > 0)
+
+    - name: Enable & start CloudWatch agent
+      service:
+        name: amazon-cloudwatch-agent
+        state: started
+        enabled: yes
+      when: monitoring_agent == "cloudwatch" and (cloudwatch_agent_deb_url | length > 0)

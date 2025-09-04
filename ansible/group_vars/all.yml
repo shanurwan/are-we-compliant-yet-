@@ -1,0 +1,23 @@
+# Global variables for hardening
+cis_level: 1
+ssh_permit_root_login: "no"
+
+# Password aging (CIS-style)
+password_max_days: 90
+password_min_days: 7
+password_warn_age: 14
+
+# Time sync
+time_sync_service: chrony
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+
+# Optional protections
+fail2ban_enabled: true
+
+# Monitoring agent: "node_exporter" or "cloudwatch"
+monitoring_agent: node_exporter
+
+# If using CloudWatch later, set the .deb URL for your distro
+cloudwatch_agent_deb_url: ""
