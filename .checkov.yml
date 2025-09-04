@@ -1,0 +1,9 @@
+quiet: false
+soft_fail: false          # fail the pipeline on findings
+framework: ["terraform"]
+download_external_modules: true
+skip_paths:
+  - ".github/"
+  - "compliance/reports/"
+  - "ansible/"
+secrets_scan: true
