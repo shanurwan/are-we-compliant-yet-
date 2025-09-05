@@ -3,12 +3,11 @@ repos:
     rev: v1.88.4
     hooks:
       - id: terraform_fmt
+        args: [--hook-config=--tf-path=terraform]
       - id: terraform_validate
+        args: [--hook-config=--tf-path=terraform]
       - id: terraform_tflint
         args:
-          # always use the repo-root config, no matter the cwd
           - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
-          # replacement for deprecated --module
           - --args=--call-module-type=all
-          # let tflint handle chdir so paths are nicer
           - --hook-config=--delegate-chdir

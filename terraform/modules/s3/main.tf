@@ -35,23 +35,23 @@ resource "random_id" "suffix" {
   byte_length = 2 # 4 hex chars
 }
 
-# -------- Name normalization without regexreplace --------
 locals {
   # Keep only [a-z0-9-], lowercase
   base_name       = join("", regexall("[a-z0-9-]", lower(var.name)))
-  base_nonempty   = local.base_name != "" ? local.base_name : "bucket" # fallback
-  base_start      = startswith(local.base_nonempty, "-") ? "a${local.base_nonempty}" : local_base_nonempty
-  base_clean      = endswith(local.base_start, "-") ? "${local.base_start}a" : local.base_start
+  base_nonempty   = base_name != "" ? base_name : "bucket" # fallback
+  base_start      = startswith(base_nonempty, "-") ? "a${base_nonempty}" : base_nonempty
+  base_clean      = endswith(base_start, "-") ? "${base_start}a" : base_start
 
   # Suffix and length guard (suffix = "-app-XXXX" -> 9 chars)
   suffix          = "-app-${random_id.suffix.hex}"
-  max_prefix_len  = 63 - length(local.suffix)
-  prefix_trunc    = substr(local.base_clean, 0, local.max_prefix_len)
-  prefix_final    = endswith(local.prefix_trunc, "-") ? substr(local.prefix_trunc, 0, length(local.prefix_trunc) - 1) : local.prefix_trunc
-  prefix_nonempty = local.prefix_final != "" ? local.prefix_final : "bucket"
+  max_prefix_len  = 63 - length(suffix)
+  prefix_trunc    = substr(base_clean, 0, max_prefix_len)
+  prefix_final    = endswith(prefix_trunc, "-") ? substr(prefix_trunc, 0, length(prefix_trunc) - 1) : prefix_trunc
+  prefix_nonempty = prefix_final != "" ? prefix_final : "bucket"
 
-  bucket_name     = "${local.prefix_nonempty}${local.suffix}"
+  bucket_name     = "${prefix_nonempty}${suffix}"
 }
+
 
 resource "aws_s3_bucket" "this" {
   bucket        = local.bucket_name
