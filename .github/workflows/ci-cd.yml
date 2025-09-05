@@ -26,14 +26,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install pre-commit + tflint
+
+      # ✅ Install Terraform so the hooks can find `terraform`
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      # (Optional but cleaner than curl): install TFLint
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v5
+        with:
+          tflint_version: latest
+
+      - name: Install pre-commit
+        run: pip install --upgrade pip pre-commit
+
+      - name: Show tool versions
         run: |
-          pip install --upgrade pip pre-commit
-          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
-          tflint --init
+          terraform -version
+          tflint --version
+          which terraform
+
       - name: Run pre-commit
         run: pre-commit run -a
 
@@ -106,8 +124,6 @@ jobs:
           name: checkov
           path: compliance/reports/checkov.json
 
-     
-
   opa:
     name: OPA policy gate
     runs-on: ubuntu-latest
@@ -131,7 +147,6 @@ jobs:
           opa eval --format pretty --fail-defined \
             --input plan.json --data terraform/policies 'data.bnm.deny'
 
-  
   apply:
     name: Terraform apply (manual opt-in)
     if: github.event_name == 'workflow_dispatch' && inputs.apply == true
