@@ -1,0 +1,36 @@
+
+name: Policy Gates
+on:
+  pull_request:
+
+jobs:
+  plan-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.7.5 }
+
+      - name: Terraform init/plan
+        working-directory: terraform
+        run: |
+          terraform init -input=false
+          terraform plan -out=tfplan
+          terraform show -json tfplan > ../plan.json
+
+      - name: Install OPA
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
+          chmod +x opa && sudo mv opa /usr/local/bin/opa
+
+      - name: OPA evaluate Rego policies
+        run: |
+          opa eval --format pretty --fail-defined \
+            --input plan.json --data terraform/policies 'data.bnm.deny'
+
+      - name: Checkov static scan
+        run: |
+          pipx install checkov
+          checkov -d . --config-file compliance/checkov_config.yml
