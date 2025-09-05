@@ -38,10 +38,10 @@ resource "random_id" "suffix" {
 
 locals {
   # Keep only [a-z0-9-], lowercase
-  base_name       = join("", regexall("[a-z0-9-]", lower(var.name)))
-  base_nonempty   = local.base_name != "" ? local.base_name : "bucket" # fallback
-  base_start      = startswith(local.base_nonempty, "-") ? "a${local.base_nonempty}" : local.base_nonempty
-  base_clean      = endswith(local.base_start, "-") ? "${local.base_start}a" : local.base_start
+  base_name     = join("", regexall("[a-z0-9-]", lower(var.name)))
+  base_nonempty = local.base_name != "" ? local.base_name : "bucket" # fallback
+  base_start    = startswith(local.base_nonempty, "-") ? "a${local.base_nonempty}" : local.base_nonempty
+  base_clean    = endswith(local.base_start, "-") ? "${local.base_start}a" : local.base_start
 
   # Suffix and length guard (suffix = "-app-XXXX" -> 9 chars)
   suffix          = "-app-${random_id.suffix.hex}"
@@ -50,7 +50,7 @@ locals {
   prefix_final    = endswith(local.prefix_trunc, "-") ? substr(local.prefix_trunc, 0, length(local.prefix_trunc) - 1) : local.prefix_trunc
   prefix_nonempty = local.prefix_final != "" ? local.prefix_final : "bucket"
 
-  bucket_name     = "${local.prefix_nonempty}${local.suffix}"
+  bucket_name = "${local.prefix_nonempty}${local.suffix}"
 }
 
 resource "aws_s3_bucket" "this" {
@@ -86,14 +86,14 @@ resource "aws_s3_bucket_public_access_block" "this" {
 resource "aws_s3_bucket_policy" "tls_only" {
   bucket = aws_s3_bucket.this.id
   policy = jsonencode({
-    Version   = "2012-10-17",
+    Version = "2012-10-17",
     Statement = [
       {
         Sid       = "DenyInsecureTransport",
         Effect    = "Deny",
         Principal = "*",
         Action    = "s3:*",
-        Resource  = [
+        Resource = [
           aws_s3_bucket.this.arn,
           "${aws_s3_bucket.this.arn}/*"
         ],
@@ -105,5 +105,5 @@ resource "aws_s3_bucket_policy" "tls_only" {
   })
 }
 
-output "bucket"     { value = aws_s3_bucket.this.id }
+output "bucket" { value = aws_s3_bucket.this.id }
 output "bucket_arn" { value = aws_s3_bucket.this.arn }

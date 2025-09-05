@@ -37,17 +37,17 @@ module "s3" {
 }
 
 module "iam" {
-  source        = "./modules/iam"
-  name          = var.name
-  s3_bucket_arn = module.s3.bucket_arn
+  source           = "./modules/iam"
+  name             = var.name
+  s3_bucket_arn    = module.s3.bucket_arn
   enable_s3_access = true
 }
 
 
 module "ec2" {
-  source                = "./modules/ec2"
-  name                  = var.name
-  vpc_id                = module.vpc.vpc_id
+  source = "./modules/ec2"
+  name   = var.name
+  vpc_id = module.vpc.vpc_id
 
   # Only set when bastion is enabled; safely handle empty lists
   public_subnet_id   = var.enable_bastion && length(module.vpc.public_subnet_ids) > 0 ? module.vpc.public_subnet_ids[0] : null

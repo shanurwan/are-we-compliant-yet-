@@ -80,7 +80,7 @@ resource "aws_nat_gateway" "nat" {
   subnet_id     = aws_subnet.public[local.nat_subnet_key].id
   tags          = { Name = "${var.name}-nat" }
 
-  
+
   depends_on = [aws_internet_gateway.igw]
 }
 

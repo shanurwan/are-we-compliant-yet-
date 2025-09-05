@@ -35,7 +35,7 @@ variable "public_subnet_id" {
 variable "allowed_ssh_cidr" {
   type    = string
   default = "0.0.0.0/0"
-  
+
   validation {
     condition     = can(cidrnetmask(var.allowed_ssh_cidr))
     error_message = "allowed_ssh_cidr must be a valid CIDR (e.g., 203.0.113.5/32)."
@@ -96,7 +96,7 @@ resource "aws_instance" "bastion" {
 
   tags = { Name = "${var.name}-bastion" }
 
-  
+
   lifecycle {
     precondition {
       condition     = !var.enable_bastion || var.public_subnet_id != null
