@@ -1,0 +1,10 @@
+plugin: amazon.aws.aws_ec2
+regions: [ ap-southeast-1 ]
+filters:
+  "tag:Project": bnm-iac-demo
+  "tag:Environment": dev
+hostnames: [ instance-id ]
+compose:
+  ansible_connection: "'aws_ssm'"
+  ansible_user: "'ubuntu'"
+  ansible_python_interpreter: "'/usr/bin/python3'"

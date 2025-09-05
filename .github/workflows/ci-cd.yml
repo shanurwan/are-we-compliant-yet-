@@ -1,0 +1,194 @@
+name: CI/CD – Terraform + Policy + Ansible
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_IN_AUTOMATION: "true"
+  TFROOT: terraform
+
+jobs:
+  lint-precommit:
+    name: pre-commit (fmt/validate/tflint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install pre-commit + tflint
+        run: |
+          pip install pre-commit
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+      - name: Run pre-commit
+        run: pre-commit run -a
+
+  plan:
+    name: Terraform plan
+    runs-on: ubuntu-latest
+    needs: [lint-precommit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.7.5 }
+
+      - name: Terraform init/plan
+        working-directory: ${{ env.TFROOT }}
+        run: |
+          terraform init -input=false
+          terraform validate
+          terraform plan -out=tfplan
+          terraform show -json tfplan > ../plan.json
+
+      - name: Upload plan artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-plan
+          path: |
+            terraform/tfplan
+            plan.json
+
+  checkov:
+    name: Checkov scan
+    runs-on: ubuntu-latest
+    needs: [plan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: pipx install checkov
+
+      - name: Run Checkov (JSON out)
+        run: |
+          mkdir -p compliance/reports
+          checkov -d . --config-file compliance/checkov_config.yml -o json > compliance/reports/checkov.json
+
+      - name: Upload Checkov JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov
+          path: compliance/reports/checkov.json
+
+  opa:
+    name: OPA policy gate
+    runs-on: ubuntu-latest
+    needs: [plan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download plan.json
+        uses: actions/download-artifact@v4
+        with: { name: tf-plan, path: . }
+
+      - name: Install OPA
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
+          chmod +x opa && sudo mv opa /usr/local/bin/opa
+
+      - name: Evaluate Rego policies (fail if deny[])
+        run: |
+          opa eval --format pretty --fail-defined \
+            --input plan.json --data terraform/policies 'data.bnm.deny'
+
+  apply:
+    name: Terraform apply (main only)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [plan, checkov, opa]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.7.5 }
+
+      - name: Download tfplan
+        uses: actions/download-artifact@v4
+        with: { name: tf-plan, path: terraform }
+
+      - name: Apply saved plan
+        working-directory: ${{ env.TFROOT }}
+        run: terraform apply -auto-approve tfplan
+
+  ansible-harden:
+    name: Ansible hardening via SSM (main only)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [apply]
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Ansible + AWS collections
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ansible python3-boto3
+          ansible-galaxy collection install amazon.aws community.aws
+
+      - name: Wait for SSM availability (up to ~5 min)
+        run: |
+          for i in $(seq 1 30); do
+            aws ssm describe-instance-information --query 'InstanceInformationList[].PingStatus' --output text | grep -q Online && break || sleep 10
+          done
+
+      - name: Harden (CIS) with dynamic inventory (tag-filtered)
+        run: |
+          ansible-playbook -i ansible/inventory_aws_ec2_ssm.yml ansible/playbooks/harden.yml | tee ansible_harden.log
+
+      - name: Install monitoring agent
+        run: |
+          ansible-playbook -i ansible/inventory_aws_ec2_ssm.yml ansible/playbooks/monitoring.yml | tee -a ansible_harden.log
+
+      - name: Upload Ansible logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-logs
+          path: ansible_harden.log
+
+  report:
+    name: Build HTML report
+    runs-on: ubuntu-latest
+    needs: [checkov]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Checkov JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: checkov
+          path: compliance/reports
+
+      - name: Generate HTML report
+        run: |
+          python3 scripts/generate_report.py compliance/reports/checkov.json compliance/reports/compliance_report.html
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-report
+          path: compliance/reports/compliance_report.html
