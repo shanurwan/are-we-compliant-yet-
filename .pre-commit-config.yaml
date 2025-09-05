@@ -5,4 +5,7 @@ repos:
       - id: terraform_fmt
       - id: terraform_validate
       - id: terraform_tflint
-        args: [--args=--config=.tflint.hcl]
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+          - --args=--module          
+          - --hook-config=--delegate-chdir
