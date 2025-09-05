@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.88.4
+    hooks:
+      - id: terraform_fmt
+        args: [--hook-config=--tf-path=terraform]
+      - id: terraform_validate
+        args: [--hook-config=--tf-path=terraform]
+      - id: terraform_tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+          - --args=--call-module-type=all
+          - --hook-config=--delegate-chdir
