@@ -24,12 +24,13 @@ variable "public_subnet_id" {
   type     = string
   default  = null
   nullable = true
-  
   validation {
-    condition     = var.public_subnet_id == null || length(trim(var.public_subnet_id)) > 0
+    # was: length(trim(var.public_subnet_id)) > 0
+    condition     = var.public_subnet_id == null || length(trimspace(var.public_subnet_id)) > 0
     error_message = "public_subnet_id can be null or a non-empty string."
   }
 }
+
 
 variable "allowed_ssh_cidr" {
   type    = string
