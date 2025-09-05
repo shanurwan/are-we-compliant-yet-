@@ -1,3 +1,18 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+  }
+}
+
 variable "name" {
   type = string
   validation {
@@ -9,7 +24,7 @@ variable "name" {
 variable "kms_key_id" {
   type    = string
   default = null
-  # Keep it simple: allow KMS key ARN or alias/
+  # Allow a KMS key ARN or alias/
   validation {
     condition     = var.kms_key_id == null || startswith(var.kms_key_id, "arn:") || startswith(var.kms_key_id, "alias/")
     error_message = "kms_key_id must be a KMS key ARN or start with alias/."
@@ -23,19 +38,19 @@ resource "random_id" "suffix" {
 # -------- Name normalization without regexreplace --------
 locals {
   # Keep only [a-z0-9-], lowercase
-  base_name      = join("", regexall("[a-z0-9-]", lower(var.name)))
-  base_nonempty  = local.base_name != "" ? local.base_name : "bucket"      # fallback
-  base_start     = startswith(local.base_nonempty, "-") ? "a${local.base_nonempty}" : local.base_nonempty
-  base_clean     = endswith(local.base_start, "-") ? "${local.base_start}a" : local.base_start
+  base_name       = join("", regexall("[a-z0-9-]", lower(var.name)))
+  base_nonempty   = local.base_name != "" ? local.base_name : "bucket" # fallback
+  base_start      = startswith(local.base_nonempty, "-") ? "a${local.base_nonempty}" : local_base_nonempty
+  base_clean      = endswith(local.base_start, "-") ? "${local.base_start}a" : local.base_start
 
   # Suffix and length guard (suffix = "-app-XXXX" -> 9 chars)
-  suffix         = "-app-${random_id.suffix.hex}"
-  max_prefix_len = 63 - length(local.suffix)
-  prefix_trunc   = substr(local.base_clean, 0, local.max_prefix_len)
-  prefix_final   = endswith(local.prefix_trunc, "-") ? substr(local.prefix_trunc, 0, length(local.prefix_trunc) - 1) : local.prefix_trunc
-  prefix_nonempty= local.prefix_final != "" ? local.prefix_final : "bucket"
+  suffix          = "-app-${random_id.suffix.hex}"
+  max_prefix_len  = 63 - length(local.suffix)
+  prefix_trunc    = substr(local.base_clean, 0, local.max_prefix_len)
+  prefix_final    = endswith(local.prefix_trunc, "-") ? substr(local.prefix_trunc, 0, length(local.prefix_trunc) - 1) : local.prefix_trunc
+  prefix_nonempty = local.prefix_final != "" ? local.prefix_final : "bucket"
 
-  bucket_name    = "${local.prefix_nonempty}${local.suffix}"
+  bucket_name     = "${local.prefix_nonempty}${local.suffix}"
 }
 
 resource "aws_s3_bucket" "this" {

@@ -1,3 +1,14 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 variable "name" {
   type = string
 }
@@ -13,7 +24,6 @@ variable "cidr" {
 variable "public_subnet_cidrs" {
   type = list(string)
   validation {
-    # Just ensure it's non-empty; avoids tricky funcs/comprehensions
     condition     = length(var.public_subnet_cidrs) > 0
     error_message = "public_subnet_cidrs must contain at least one CIDR."
   }
@@ -27,8 +37,6 @@ variable "private_subnet_cidrs" {
   }
 }
 
-
-
 # Choose a deterministic public subnet (first by sorted CIDR) for the NAT gateway
 locals {
   nat_subnet_key = sort(var.public_subnet_cidrs)[0]
@@ -38,7 +46,7 @@ resource "aws_vpc" "this" {
   cidr_block           = var.cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags = { Name = "${var.name}-vpc" }
+  tags                 = { Name = "${var.name}-vpc" }
 }
 
 resource "aws_internet_gateway" "igw" {
@@ -52,14 +60,14 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = each.value
   map_public_ip_on_launch = true
-  tags = { Name = "${var.name}-public-${each.value}" }
+  tags                    = { Name = "${var.name}-public-${each.value}" }
 }
 
 resource "aws_subnet" "private" {
   for_each   = { for cidr in var.private_subnet_cidrs : cidr => cidr }
   vpc_id     = aws_vpc.this.id
   cidr_block = each.value
-  tags = { Name = "${var.name}-private-${each.value}" }
+  tags       = { Name = "${var.name}-private-${each.value}" }
 }
 
 resource "aws_eip" "nat" {
@@ -72,7 +80,7 @@ resource "aws_nat_gateway" "nat" {
   subnet_id     = aws_subnet.public[local.nat_subnet_key].id
   tags          = { Name = "${var.name}-nat" }
 
-  # Optional: ensure the IGW exists before NAT for quicker reachability
+  
   depends_on = [aws_internet_gateway.igw]
 }
 
