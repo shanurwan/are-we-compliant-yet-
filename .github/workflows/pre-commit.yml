@@ -4,11 +4,51 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Caches speed up repeated runs
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-tf-plugins-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-plugins-
+
+      - name: Cache TFLint plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.tflint.d/plugins
+          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tflint-
+
+      - name: Cache pre-commit envs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-precommit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-precommit-
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -24,16 +64,10 @@ jobs:
         run: |
           terraform -version
           tflint --version
-          command -v terraform
+          which terraform
 
-      
-      - name: Export Terraform path for hooks
-        run: echo "PCT_TFPATH=$(command -v terraform)" >> "$GITHUB_ENV"
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pip pre-commit
 
-      - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
-        env:
-          
-          PCT_TFPATH: ${{ env.PCT_TFPATH }}
-        with:
-          extra_args: --all-files
+      - name: Run pre-commit (native)
+        run: pre-commit run --all-files
