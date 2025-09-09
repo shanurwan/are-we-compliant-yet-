@@ -60,7 +60,7 @@ This demo simulates BNM RMiT requirements, mapped to IaC:
 1. Clone Repo
 
 ```
-git clone https://github.com/yourusername/bnm-iac-compliance-demo.git
+git clone https://github.com/shanurwan/are-we-compliant-yet-.git
 cd bnm-iac-compliance-demo
 ```
 
