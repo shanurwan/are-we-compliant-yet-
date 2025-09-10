@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This project demonstrates how to use Infrastructure-as-Code (IaC) with Terraform and Ansible to provision secure cloud infrastructure that aligns with Bank Negara Malaysia (BNM) RMiT compliance requirements.
+This project demonstrates how to use Infrastructure-as-Code (IaC) with Terraform and Ansible to provision secure cloud infrastructure that aligns with Bank Negara Malaysia (BNM) RMiT compliance requirements. Currently in process upgading to enterprise grade. The sample html compliance report for demo version is available upon request.
 
 ## Key highlights:
 
