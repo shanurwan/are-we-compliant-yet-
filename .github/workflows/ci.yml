@@ -2,8 +2,9 @@ name: bnm-iac-ci
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, ci/cd ]    
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       run_apply:
@@ -18,8 +19,12 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # for AWS OIDC
+  id-token: write    # for AWS OIDC
   actions: read
+
+concurrency:
+  group: bnm-iac-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   TF_WORKING_DIR: demo/terraform
@@ -40,7 +45,8 @@ jobs:
       - name: Terraform fmt/validate (no cloud calls)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform fmt -check
+          terraform version
+          terraform fmt -check -diff -recursive
           terraform init -input=false
           terraform validate
 
@@ -51,29 +57,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
       - name: Configure AWS (read-only, plan only)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_READONLY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-          #for debugging
+      # Debug: verify OIDC + branch context
       - name: Who am I?
         run: aws sts get-caller-identity
-
       - name: Show ref & repo (debug)
         run: |
           echo "ref=${{ github.ref }}"
           echo "repository=${{ github.repository }}"
-
-      - name: Terraform Init
-        working-directory: environments/dev
-        run: terraform init -input=false
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.6
 
       - name: Terraform plan → plan.json
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -93,6 +94,7 @@ jobs:
     name: Checkov (HCL & plan-aware)
     runs-on: ubuntu-latest
     needs: plan
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 
@@ -105,7 +107,6 @@ jobs:
       - name: Install Checkov
         run: pipx install checkov
 
-      # === Only change: ensure artifacts are produced even on failures ===
       - name: Checkov HCL scan → JSON (soft-fail)
         run: checkov -d ${{ env.TF_WORKING_DIR }} -o json --soft-fail > checkov_hcl.json
 
@@ -131,12 +132,12 @@ jobs:
         run: |
           echo "Checkov plan scan failed (exit ${{ steps.checkov_plan.outputs.exit_code }})"
           exit 1
-      # === End of minimal changes ===
 
   opa:
     name: OPA (policy-as-code gate)
     runs-on: ubuntu-latest
     needs: plan
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 
@@ -168,6 +169,7 @@ jobs:
     name: Generate HTML compliance report
     runs-on: ubuntu-latest
     needs: [checkov, opa]
+    if: always()   # ← still produce a report even if checks fail
     steps:
       - uses: actions/checkout@v4
 
@@ -176,10 +178,12 @@ jobs:
         with:
           name: tf-plan-json
           path: demo/terraform/policy_inputs
+
       - uses: actions/download-artifact@v4
         with:
           name: checkov-results
           path: .
+
       - uses: actions/download-artifact@v4
         with:
           name: opa-output
@@ -189,7 +193,7 @@ jobs:
         run: |
           mkdir -p compliance/reports
           {
-            echo '<!doctype html><html><head><meta charset="utf-8"><title>BNM IaC Compliance Report</title><style>body{font-family:system-ui,Arial;margin:24px} pre{background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto}</style></head><body>';
+            echo '<!doctype html><html><head><meta charset="utf-8"><title>BNM IaC Compliance Report</title><style>body{font-family:system-ui,Arial;margin:24px} pre{background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}</style></head><body>';
             echo '<h1>BNM IaC Compliance Report</h1>';
             echo "<p><strong>Generated:</strong> $(date -Is)</p>";
             echo '<h2>Terraform Plan (JSON)</h2><pre>'; sed 's/&/\&amp;/g; s/</\&lt;/g' demo/terraform/policy_inputs/plan.json | head -n 200; echo '</pre>';
@@ -222,12 +226,15 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
 
       - name: Apply (requires env approval; not run by default)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform init -input=false
           terraform apply -auto-approve -var="db_password=$(openssl rand -base64 12)"
+
 
 
 
