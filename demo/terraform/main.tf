@@ -124,6 +124,9 @@ resource "aws_db_instance" "db" {
   password             = var.db_password
   db_subnet_group_name = aws_db_subnet_group.db.name
 
+  auto_minor_version_upgrade = true
+
+
   storage_encrypted    = true
   publicly_accessible  = false
   skip_final_snapshot  = true
