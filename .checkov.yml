@@ -1,0 +1,9 @@
+directory: ./demo/terraform
+
+framework:
+  - terraform
+  - secrets
+
+download-external-modules: true
+soft-fail: false
+output: cli
