@@ -1,0 +1,41 @@
+---
+#  OS Updates
+- name: Ensure latest security patches are applied
+  package:
+    name: "*"
+    state: latest
+
+# Disable root SSH login
+- name: Disallow direct root SSH login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: restart ssh
+
+# Enforce strong password policy
+- name: Ensure password length minimum is 14
+  lineinfile:
+    path: /etc/security/pwquality.conf
+    regexp: '^minlen'
+    line: 'minlen = 14'
+
+#Auditd service
+- name: Ensure auditd is installed
+  package:
+    name: auditd
+    state: present
+
+- name: Ensure auditd service is enabled and started
+  service:
+    name: auditd
+    state: started
+    enabled: yes
+
+# File permissions for /etc/passwd
+- name: Ensure /etc/passwd has correct permissions
+  file:
+    path: /etc/passwd
+    owner: root
+    group: root
+    mode: '0644'

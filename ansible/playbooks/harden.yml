@@ -1,0 +1,7 @@
+---
+- name: Apply CIS-style hardening
+  hosts: all
+  become: yes
+
+  roles:
+    - cis
