@@ -2,7 +2,7 @@ name: bnm-iac-ci
 
 on:
   push:
-    branches: [ main, ci/cd ]    # add/remove branches as you wish
+    branches: [ main, ci/cd ]   # adjust as you like
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -19,7 +19,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write    # for AWS OIDC
+  id-token: write     # for AWS OIDC
   actions: read
 
 concurrency:
@@ -94,7 +94,6 @@ jobs:
     name: Checkov (HCL & plan-aware)
     runs-on: ubuntu-latest
     needs: plan
-    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 
@@ -105,15 +104,25 @@ jobs:
           path: demo/terraform/policy_inputs
 
       - name: Install Checkov
-        run: pipx install checkov
+        run: |
+          pipx install checkov || pip3 install -U checkov
 
-      - name: Checkov HCL scan → JSON
-        run: checkov -d ${{ env.TF_WORKING_DIR }} -o json > checkov_hcl.json
+      # Soft-fail HCL so JSON/artifacts are still produced
+      - name: Checkov HCL scan → JSON (soft-fail)
+        run: checkov -d ${{ env.TF_WORKING_DIR }} -o json --soft-fail > checkov_hcl.json
 
-      - name: Checkov plan scan → JSON
-        run: checkov -f ${{ env.PLAN_JSON }} --framework terraform_plan -o json > checkov_plan.json
+      # Capture exit code for plan scan but don't fail yet
+      - name: Checkov plan scan → JSON (capture exit code)
+        id: checkov_plan
+        run: |
+          set +e
+          checkov -f ${{ env.PLAN_JSON }} --framework terraform_plan -o json > checkov_plan.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
 
+      # Always upload results so the report job can download them
       - name: Upload Checkov results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: checkov-results
@@ -121,11 +130,17 @@ jobs:
             checkov_hcl.json
             checkov_plan.json
 
+      # Now gate on plan violations (exit code != 0)
+      - name: Gate on Checkov plan failures
+        if: steps.checkov_plan.outputs.exit_code != '0'
+        run: |
+          echo "Checkov plan scan failed (exit ${{ steps.checkov_plan.outputs.exit_code }})"
+          exit 1
+
   opa:
     name: OPA (policy-as-code gate)
     runs-on: ubuntu-latest
     needs: plan
-    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 
@@ -140,54 +155,74 @@ jobs:
           curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
           chmod +x opa && sudo mv opa /usr/local/bin/opa
 
-      - name: Run OPA (fail on deny)
+      # Run OPA, capture exit code, but upload output regardless
+      - name: Run OPA (capture exit code)
+        id: opa_eval
         run: |
+          set +e
           opa eval --format pretty \
             --fail-defined \
             --input ${{ env.PLAN_JSON }} \
             --data policies 'data.terraform.policy.deny' | tee opa_output.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
 
       - name: Upload OPA output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: opa-output
           path: opa_output.txt
 
+      - name: Gate on OPA denies
+        if: steps.opa_eval.outputs.exit_code != '0'
+        run: |
+          echo "OPA reported deny rules (exit ${{ steps.opa_eval.outputs.exit_code }})"
+          exit 1
+
   report:
     name: Generate HTML compliance report
     runs-on: ubuntu-latest
     needs: [checkov, opa]
-    if: always()   # ← still produce a report even if checks fail
+    if: always()   # produce a report even if gates failed
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download artifacts
+      - name: Download plan.json
         uses: actions/download-artifact@v4
         with:
           name: tf-plan-json
           path: demo/terraform/policy_inputs
 
-      - uses: actions/download-artifact@v4
+      - name: Download Checkov results (best-effort)
+        uses: actions/download-artifact@v4
         with:
           name: checkov-results
           path: .
+        continue-on-error: true
 
-      - uses: actions/download-artifact@v4
+      - name: Download OPA output (best-effort)
+        uses: actions/download-artifact@v4
         with:
           name: opa-output
           path: .
+        continue-on-error: true
 
       - name: Build report.html
         run: |
           mkdir -p compliance/reports
+          HCL_PATH="checkov_hcl.json"; PLAN_PATH="checkov_plan.json"; OPA_PATH="opa_output.txt"
+          HCL_CONTENT=$([ -f "$HCL_PATH" ] && sed 's/&/\&amp;/g; s/</\&lt;/g' "$HCL_PATH" | head -n 200 || echo "(no checkov_hcl.json)")
+          PLAN_CONTENT=$([ -f "$PLAN_PATH" ] && sed 's/&/\&amp;/g; s/</\&lt;/g' "$PLAN_PATH" | head -n 200 || echo "(no checkov_plan.json)")
+          OPA_CONTENT=$([ -f "$OPA_PATH" ] && sed 's/&/\&amp;/g; s/</\&lt;/g' "$OPA_PATH" || echo "(no opa_output.txt)")
           {
             echo '<!doctype html><html><head><meta charset="utf-8"><title>BNM IaC Compliance Report</title><style>body{font-family:system-ui,Arial;margin:24px} pre{background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap}</style></head><body>';
             echo '<h1>BNM IaC Compliance Report</h1>';
             echo "<p><strong>Generated:</strong> $(date -Is)</p>";
             echo '<h2>Terraform Plan (JSON)</h2><pre>'; sed 's/&/\&amp;/g; s/</\&lt;/g' demo/terraform/policy_inputs/plan.json | head -n 200; echo '</pre>';
-            echo '<h2>OPA Policy Evaluation</h2><pre>'; sed 's/&/\&amp;/g; s/</\&lt;/g' opa_output.txt; echo '</pre>';
-            echo '<h2>Checkov (HCL)</h2><pre>'; sed 's/&/\&amp;/g; s/</\&lt;/g' checkov_hcl.json | head -n 200; echo '</pre>';
-            echo '<h2>Checkov (Plan)</h2><pre>'; sed 's/&/\&amp;/g; s/</\&lt;/g' checkov_plan.json | head -n 200; echo '</pre>';
+            echo '<h2>OPA Policy Evaluation</h2><pre>'"$OPA_CONTENT"'</pre>';
+            echo '<h2>Checkov (HCL)</h2><pre>'"$HCL_CONTENT"'</pre>';
+            echo '<h2>Checkov (Plan)</h2><pre>'"$PLAN_CONTENT"'</pre>';
             echo '</body></html>';
           } > compliance/reports/compliance_report.html
 
@@ -222,4 +257,5 @@ jobs:
         run: |
           terraform init -input=false
           terraform apply -auto-approve -var="db_password=$(openssl rand -base64 12)"
+
 
